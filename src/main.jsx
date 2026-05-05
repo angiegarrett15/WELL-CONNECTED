@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import {
   Baby,
@@ -6,6 +6,7 @@ import {
   Car,
   CheckCircle2,
   ClipboardList,
+  Database,
   Filter,
   HandHeart,
   HeartPulse,
@@ -16,15 +17,18 @@ import {
   Megaphone,
   Phone,
   Plus,
+  RotateCcw,
+  Save,
   Search,
   ShieldCheck,
   Trash2,
   UserCog,
-  Users,
   Wrench,
   XCircle
 } from 'lucide-react';
 import './styles.css';
+
+const STORAGE_KEY = 'well-connected-mvp-state-v1';
 
 const categoryIcons = {
   Housing: Home,
@@ -49,7 +53,8 @@ const initialResources = [
     location: 'Jackson Metro',
     status: 'approved',
     source: 'Admin seeded',
-    tags: ['shelter', 'utility help', 'stabilization']
+    tags: ['shelter', 'utility help', 'stabilization'],
+    notes: 'Verify eligibility, hours, and referral pathway before public launch.'
   },
   {
     id: 2,
@@ -61,7 +66,8 @@ const initialResources = [
     location: 'Hinds County',
     status: 'approved',
     source: 'Admin seeded',
-    tags: ['food', 'household goods']
+    tags: ['food', 'household goods'],
+    notes: 'Add operating days and documentation requirements.'
   },
   {
     id: 3,
@@ -73,7 +79,8 @@ const initialResources = [
     location: 'Byram / South Jackson',
     status: 'pending',
     source: 'Participant suggestion',
-    tags: ['transportation', 'local skill', 'repair']
+    tags: ['transportation', 'local skill', 'repair'],
+    notes: 'Contact provider, confirm pricing, safety, and service boundaries.'
   },
   {
     id: 4,
@@ -85,7 +92,8 @@ const initialResources = [
     location: 'Online',
     status: 'approved',
     source: 'Admin seeded',
-    tags: ['research translation', 'public health']
+    tags: ['research translation', 'public health'],
+    notes: 'Add citation fields when backend is connected.'
   }
 ];
 
@@ -115,12 +123,57 @@ const initialPolicies = [
 
 const categories = Object.keys(categoryIcons);
 
+function loadState() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (!saved) return null;
+    return JSON.parse(saved);
+  } catch {
+    return null;
+  }
+}
+
 function EmptyState({ text }) {
   return <div className='empty-state'>{text}</div>;
 }
 
-function ResourceCard({ item, isAdmin, onApprove, onReject, onDelete }) {
+function ResourceCard({ item, isAdmin, onApprove, onReject, onDelete, onUpdate }) {
   const Icon = categoryIcons[item.category] || ClipboardList;
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft, setDraft] = useState({ ...item, tags: item.tags.join(', ') });
+
+  useEffect(() => {
+    setDraft({ ...item, tags: item.tags.join(', ') });
+  }, [item]);
+
+  function saveEdits() {
+    onUpdate(item.id, {
+      ...draft,
+      tags: draft.tags.split(',').map((tag) => tag.trim()).filter(Boolean)
+    });
+    setIsEditing(false);
+  }
+
+  if (isEditing) {
+    return (
+      <article className='resource-card edit-card'>
+        <div className='form-grid compact'>
+          <input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} />
+          <select value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })}>{categories.map((category) => <option key={category}>{category}</option>)}</select>
+          <input value={draft.location} onChange={(e) => setDraft({ ...draft, location: e.target.value })} placeholder='Location' />
+          <input value={draft.phone} onChange={(e) => setDraft({ ...draft, phone: e.target.value })} placeholder='Phone' />
+          <input value={draft.contact} onChange={(e) => setDraft({ ...draft, contact: e.target.value })} placeholder='Email/contact' />
+          <input value={draft.tags} onChange={(e) => setDraft({ ...draft, tags: e.target.value })} placeholder='Tags' />
+        </div>
+        <textarea value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
+        <textarea value={draft.notes || ''} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} placeholder='Admin notes' />
+        <div className='actions'>
+          <button onClick={saveEdits}><Save size={16} /> Save</button>
+          <button className='ghost' onClick={() => setIsEditing(false)}>Cancel</button>
+        </div>
+      </article>
+    );
+  }
 
   return (
     <article className='resource-card'>
@@ -136,10 +189,12 @@ function ResourceCard({ item, isAdmin, onApprove, onReject, onDelete }) {
         {item.contact && <span><Mail size={15} /> {item.contact}</span>}
       </div>
       <div className='tags'>{item.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>
+      {isAdmin && item.notes && <p className='admin-note'>Admin note: {item.notes}</p>}
       {isAdmin && (
         <div className='actions'>
           {item.status === 'pending' && <button onClick={() => onApprove(item.id)}><CheckCircle2 size={16} /> Approve</button>}
           {item.status === 'pending' && <button className='danger' onClick={() => onReject(item.id)}><XCircle size={16} /> Reject</button>}
+          <button className='ghost' onClick={() => setIsEditing(true)}>Edit</button>
           <button className='ghost danger-text' onClick={() => onDelete(item.id)}><Trash2 size={16} /> Delete</button>
         </div>
       )}
@@ -147,16 +202,13 @@ function ResourceCard({ item, isAdmin, onApprove, onReject, onDelete }) {
   );
 }
 
-function SubmissionForm({ onSubmit, activeCategory }) {
-  const [form, setForm] = useState({
-    title: '',
-    category: activeCategory || 'Community Skills',
-    description: '',
-    contact: '',
-    phone: '',
-    location: '',
-    tags: ''
-  });
+function SubmissionForm({ onSubmit, activeCategory, isAdmin }) {
+  const [form, setForm] = useState({ title: '', category: activeCategory || 'Community Skills', description: '', contact: '', phone: '', location: '', tags: '' });
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    if (activeCategory && activeCategory !== 'All') setForm((current) => ({ ...current, category: activeCategory }));
+  }, [activeCategory]);
 
   function update(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -164,35 +216,43 @@ function SubmissionForm({ onSubmit, activeCategory }) {
 
   function submit(event) {
     event.preventDefault();
-    if (!form.title.trim() || !form.description.trim()) return;
+    if (!form.title.trim() || !form.description.trim() || !form.location.trim()) {
+      setMessage('Resource name, location, and description are required.');
+      return;
+    }
+    if (!form.contact.trim() && !form.phone.trim()) {
+      setMessage('Add at least one contact method so admin can verify the recommendation.');
+      return;
+    }
     onSubmit({
       ...form,
       id: Date.now(),
       title: form.title.trim(),
       description: form.description.trim(),
-      status: 'pending',
-      source: 'Participant suggestion',
-      tags: form.tags.split(',').map((tag) => tag.trim()).filter(Boolean)
+      status: isAdmin ? 'approved' : 'pending',
+      source: isAdmin ? 'Admin added' : 'Participant suggestion',
+      tags: form.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
+      notes: isAdmin ? 'Added directly by admin.' : 'Needs verification before public display.'
     });
     setForm({ title: '', category: activeCategory || 'Community Skills', description: '', contact: '', phone: '', location: '', tags: '' });
+    setMessage(isAdmin ? 'Resource added.' : 'Submitted for admin review.');
   }
 
   return (
     <form className='submission-form' onSubmit={submit}>
-      <h2>Recommend a Community Resource</h2>
+      <h2>{isAdmin ? 'Add or Seed a Resource' : 'Recommend a Community Resource'}</h2>
       <p>Use this for resources the platform would miss without community knowledge, including informal local services.</p>
       <div className='form-grid'>
         <input value={form.title} onChange={(e) => update('title', e.target.value)} placeholder='Resource name' />
-        <select value={form.category} onChange={(e) => update('category', e.target.value)}>
-          {categories.map((category) => <option key={category}>{category}</option>)}
-        </select>
+        <select value={form.category} onChange={(e) => update('category', e.target.value)}>{categories.map((category) => <option key={category}>{category}</option>)}</select>
         <input value={form.location} onChange={(e) => update('location', e.target.value)} placeholder='Location or service area' />
         <input value={form.phone} onChange={(e) => update('phone', e.target.value)} placeholder='Phone number' />
         <input value={form.contact} onChange={(e) => update('contact', e.target.value)} placeholder='Email or contact method' />
         <input value={form.tags} onChange={(e) => update('tags', e.target.value)} placeholder='Tags, separated by commas' />
       </div>
       <textarea value={form.description} onChange={(e) => update('description', e.target.value)} placeholder='What does this resource provide? What should admin verify?' />
-      <button type='submit'><Plus size={16} /> Submit for Review</button>
+      {message && <p className='form-message'>{message}</p>}
+      <button type='submit'><Plus size={16} /> {isAdmin ? 'Add Resource' : 'Submit for Review'}</button>
     </form>
   );
 }
@@ -214,6 +274,8 @@ function PolicyBoard({ policies, setPolicies, isAdmin }) {
   function remove(id) {
     setPolicies((items) => items.filter((item) => item.id !== id));
   }
+
+  const visiblePolicies = isAdmin ? policies : policies.filter((policy) => policy.status === 'approved');
 
   return (
     <section className='panel'>
@@ -238,7 +300,7 @@ function PolicyBoard({ policies, setPolicies, isAdmin }) {
         {['Beneficial', 'Harmful', 'Missing'].map((type) => (
           <div className='policy-column' key={type}>
             <h3>{type}</h3>
-            {policies.filter((policy) => policy.type === type).map((policy) => (
+            {visiblePolicies.filter((policy) => policy.type === type).map((policy) => (
               <div className='policy-card' key={policy.id}>
                 <span className={`status ${policy.status}`}>{policy.status}</span>
                 <h4>{policy.title}</h4>
@@ -253,12 +315,20 @@ function PolicyBoard({ policies, setPolicies, isAdmin }) {
   );
 }
 
-function ResearchHub() {
-  const briefs = [
-    { title: 'What the research says', text: 'Plain-language summaries should state what was studied, who was studied, what was found, and what the limits are.' },
-    { title: 'Community meaning', text: 'This section turns technical findings into usable information for clinics, communities, and local decision makers.' },
-    { title: 'Evidence upload queue', text: 'Future backend feature: admin uploads briefs, community members request topics, and staff review before publication.' }
-  ];
+function ResearchHub({ isAdmin }) {
+  const [briefs, setBriefs] = useState([
+    { id: 1, title: 'What the research says', text: 'Plain-language summaries should state what was studied, who was studied, what was found, and what the limits are.' },
+    { id: 2, title: 'Community meaning', text: 'This section turns technical findings into usable information for clinics, communities, and local decision makers.' },
+    { id: 3, title: 'Evidence upload queue', text: 'Future backend feature: admin uploads briefs, community members request topics, and staff review before publication.' }
+  ]);
+  const [draft, setDraft] = useState({ title: '', text: '' });
+
+  function addBrief(event) {
+    event.preventDefault();
+    if (!draft.title.trim() || !draft.text.trim()) return;
+    setBriefs((items) => [{ id: Date.now(), ...draft }, ...items]);
+    setDraft({ title: '', text: '' });
+  }
 
   return (
     <section className='panel'>
@@ -269,20 +339,32 @@ function ResearchHub() {
           <p>Where participants find research findings translated into practical, plain-language public health information.</p>
         </div>
       </div>
+      {isAdmin && (
+        <form className='inline-form' onSubmit={addBrief}>
+          <input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder='Brief title' />
+          <input value={draft.text} onChange={(e) => setDraft({ ...draft, text: e.target.value })} placeholder='Plain-language research finding' />
+          <button type='submit'>Add Brief</button>
+        </form>
+      )}
       <div className='brief-grid'>
-        {briefs.map((brief) => <div className='brief-card' key={brief.title}><h3>{brief.title}</h3><p>{brief.text}</p></div>)}
+        {briefs.map((brief) => <div className='brief-card' key={brief.id}><h3>{brief.title}</h3><p>{brief.text}</p></div>)}
       </div>
     </section>
   );
 }
 
 function App() {
-  const [isAdmin, setIsAdmin] = useState(true);
-  const [resources, setResources] = useState(initialResources);
-  const [policies, setPolicies] = useState(initialPolicies);
-  const [activeCategory, setActiveCategory] = useState('All');
+  const saved = loadState();
+  const [isAdmin, setIsAdmin] = useState(saved?.isAdmin ?? true);
+  const [resources, setResources] = useState(saved?.resources ?? initialResources);
+  const [policies, setPolicies] = useState(saved?.policies ?? initialPolicies);
+  const [activeCategory, setActiveCategory] = useState(saved?.activeCategory ?? 'All');
   const [searchTerm, setSearchTerm] = useState('');
   const [showPendingOnly, setShowPendingOnly] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ isAdmin, resources, policies, activeCategory }));
+  }, [isAdmin, resources, policies, activeCategory]);
 
   const filteredResources = useMemo(() => {
     return resources.filter((item) => {
@@ -295,43 +377,31 @@ function App() {
     });
   }, [resources, isAdmin, activeCategory, showPendingOnly, searchTerm]);
 
-  function addResource(resource) {
-    setResources((items) => [resource, ...items]);
-  }
-
-  function approveResource(id) {
-    setResources((items) => items.map((item) => item.id === id ? { ...item, status: 'approved' } : item));
-  }
-
-  function rejectResource(id) {
-    setResources((items) => items.map((item) => item.id === id ? { ...item, status: 'rejected' } : item));
-  }
-
-  function deleteResource(id) {
-    setResources((items) => items.filter((item) => item.id !== id));
+  function addResource(resource) { setResources((items) => [resource, ...items]); }
+  function approveResource(id) { setResources((items) => items.map((item) => item.id === id ? { ...item, status: 'approved' } : item)); }
+  function rejectResource(id) { setResources((items) => items.map((item) => item.id === id ? { ...item, status: 'rejected' } : item)); }
+  function deleteResource(id) { setResources((items) => items.filter((item) => item.id !== id)); }
+  function updateResource(id, updates) { setResources((items) => items.map((item) => item.id === id ? { ...item, ...updates } : item)); }
+  function resetDemoData() {
+    setResources(initialResources);
+    setPolicies(initialPolicies);
+    setActiveCategory('All');
+    setSearchTerm('');
+    setShowPendingOnly(false);
   }
 
   const pendingCount = resources.filter((item) => item.status === 'pending').length + policies.filter((item) => item.status === 'pending').length;
+  const approvedCount = resources.filter((item) => item.status === 'approved').length;
 
   return (
     <div className='app-shell'>
       <aside className='sidebar'>
-        <div className='brand'>
-          <div className='brand-mark'>WC</div>
-          <div>
-            <h1>Well Connected</h1>
-            <p>Research, resources, policy, and community knowledge.</p>
-          </div>
-        </div>
-        <button className='role-toggle' onClick={() => setIsAdmin((value) => !value)}>
-          <UserCog size={18} /> View: {isAdmin ? 'Admin' : 'Participant'}
-        </button>
+        <div className='brand'><div className='brand-mark'>WC</div><div><h1>Well Connected</h1><p>Research, resources, policy, and community knowledge.</p></div></div>
+        <button className='role-toggle' onClick={() => setIsAdmin((value) => !value)}><UserCog size={18} /> View: {isAdmin ? 'Admin' : 'Participant'}</button>
+        <button className='role-toggle secondary' onClick={resetDemoData}><RotateCcw size={18} /> Reset Demo Data</button>
         <nav>
           <button className={activeCategory === 'All' ? 'active' : ''} onClick={() => setActiveCategory('All')}>All Sections</button>
-          {categories.map((category) => {
-            const Icon = categoryIcons[category];
-            return <button key={category} className={activeCategory === category ? 'active' : ''} onClick={() => setActiveCategory(category)}><Icon size={17} /> {category}</button>;
-          })}
+          {categories.map((category) => { const Icon = categoryIcons[category]; return <button key={category} className={activeCategory === category ? 'active' : ''} onClick={() => setActiveCategory(category)}><Icon size={17} /> {category}</button>; })}
         </nav>
       </aside>
 
@@ -342,36 +412,30 @@ function App() {
             <h2>Find resources. Recommend what is missing. Translate research into action.</h2>
             <p>Participants can view approved resources and submit recommendations. Admins can review, approve, reject, edit, and remove community-submitted content.</p>
           </div>
-          <div className='stat-card'>
-            <strong>{pendingCount}</strong>
-            <span>Items waiting for admin review</span>
-          </div>
+          <div className='stat-card'><strong>{pendingCount}</strong><span>Items waiting for admin review</span></div>
+          <div className='stat-card'><strong>{approvedCount}</strong><span>Approved resources visible to participants</span></div>
         </header>
+
+        <section className='system-note'>
+          <Database size={18} /> This MVP saves changes in the browser with localStorage. A production release needs Firebase, Supabase, or another backend for shared accounts, secure moderation, and permanent data.
+        </section>
 
         <section className='toolbar'>
           <label><Search size={18} /><input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder='Search resources, locations, tags...' /></label>
           {isAdmin && <button className={showPendingOnly ? 'active-filter' : ''} onClick={() => setShowPendingOnly((value) => !value)}><Filter size={16} /> Pending Only</button>}
         </section>
 
-        <SubmissionForm onSubmit={addResource} activeCategory={activeCategory === 'All' ? 'Community Skills' : activeCategory} />
+        <SubmissionForm onSubmit={addResource} activeCategory={activeCategory === 'All' ? 'Community Skills' : activeCategory} isAdmin={isAdmin} />
 
         <section className='resource-section'>
-          <div className='section-heading'>
-            <ClipboardList />
-            <div>
-              <h2>{activeCategory === 'All' ? 'Resource Directory' : activeCategory}</h2>
-              <p>{isAdmin ? 'Admin view includes approved, pending, and rejected content.' : 'Participant view shows approved community resources only.'}</p>
-            </div>
-          </div>
+          <div className='section-heading'><ClipboardList /><div><h2>{activeCategory === 'All' ? 'Resource Directory' : activeCategory}</h2><p>{isAdmin ? 'Admin view includes approved, pending, and rejected content.' : 'Participant view shows approved community resources only.'}</p></div></div>
           <div className='resource-grid'>
-            {filteredResources.length ? filteredResources.map((item) => (
-              <ResourceCard key={item.id} item={item} isAdmin={isAdmin} onApprove={approveResource} onReject={rejectResource} onDelete={deleteResource} />
-            )) : <EmptyState text='No matching resources found.' />}
+            {filteredResources.length ? filteredResources.map((item) => <ResourceCard key={item.id} item={item} isAdmin={isAdmin} onApprove={approveResource} onReject={rejectResource} onDelete={deleteResource} onUpdate={updateResource} />) : <EmptyState text='No matching resources found.' />}
           </div>
         </section>
 
         <PolicyBoard policies={policies} setPolicies={setPolicies} isAdmin={isAdmin} />
-        <ResearchHub />
+        <ResearchHub isAdmin={isAdmin} />
       </main>
     </div>
   );
