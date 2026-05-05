@@ -1,0 +1,88 @@
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #08152a;
+  color: white;
+}
+
+.app {
+  padding: 2rem;
+}
+
+header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+header h1 {
+  color: #6db7ff;
+  font-size: 3rem;
+}
+
+.role-banner {
+  background: #10284b;
+  padding: 1rem;
+  border-radius: 12px;
+  margin-bottom: 2rem;
+  text-align: center;
+}
+
+main {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1.5rem;
+}
+
+.card {
+  background: #10284b;
+  padding: 1.5rem;
+  border-radius: 18px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+textarea {
+  width: 100%;
+  min-height: 90px;
+  margin-top: 1rem;
+  border-radius: 10px;
+  border: none;
+  padding: 0.75rem;
+}
+
+button {
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  border: none;
+  border-radius: 10px;
+  background: #3182ce;
+  color: white;
+  cursor: pointer;
+  margin-right: 0.5rem;
+}
+
+button:hover {
+  opacity: 0.9;
+}
+
+.danger {
+  background: #c53030;
+}
+
+.resource-box {
+  background: #173761;
+  border-radius: 10px;
+  padding: 1rem;
+  margin-top: 1rem;
+}
+
+.admin-panel {
+  margin-top: 1rem;
+  border-top: 1px solid rgba(255,255,255,0.2);
+  padding-top: 1rem;
+}
